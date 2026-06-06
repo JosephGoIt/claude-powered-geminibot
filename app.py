@@ -1,9 +1,13 @@
 import asyncio
+import uuid
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 app = FastAPI(title="BlueBot")
+
+# In-memory job store: job_id -> {status, result}
+_jobs: dict = {}
 
 PAGE = """<!DOCTYPE html>
 <html lang="en">
@@ -139,7 +143,7 @@ PAGE = """<!DOCTYPE html>
 
     <div class="status" id="status">
       <div class="spinner"></div>
-      <span>Running browser agent — this can take up to a minute...</span>
+      <span id="status-text">Running browser agent — this can take up to a minute...</span>
     </div>
 
     <div class="result-card" id="result-card">
@@ -149,6 +153,8 @@ PAGE = """<!DOCTYPE html>
   </div>
 
   <script>
+    let _pollTimer = null;
+
     async function sendTask() {
       const input = document.getElementById('task-input');
       const task = input.value.trim();
@@ -165,6 +171,8 @@ PAGE = """<!DOCTYPE html>
       card.className = 'result-card';
       body.textContent = '';
 
+      if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+
       try {
         const res = await fetch('/run', {
           method: 'POST',
@@ -172,25 +180,63 @@ PAGE = """<!DOCTYPE html>
           body: JSON.stringify({ task })
         });
         const data = await res.json();
-        card.classList.add('visible');
-        if (res.ok) {
-          header.textContent = 'Result';
-          body.textContent = typeof data.result === 'object'
-            ? JSON.stringify(data.result, null, 2)
-            : data.result;
-        } else {
-          card.classList.add('error');
-          header.textContent = 'Error';
-          body.textContent = data.detail || 'An unexpected error occurred.';
+        if (!res.ok) {
+          showError(data.detail || 'Failed to start task.');
+          btn.disabled = false;
+          status.classList.remove('visible');
+          return;
         }
+
+        pollResult(data.job_id, btn, status, card, header, body);
       } catch (err) {
-        card.classList.add('visible', 'error');
-        header.textContent = 'Error';
-        body.textContent = 'Network error: ' + err.message;
-      } finally {
+        showError('Network error: ' + err.message);
         btn.disabled = false;
         status.classList.remove('visible');
       }
+    }
+
+    function pollResult(jobId, btn, status, card, header, body) {
+      let elapsed = 0;
+      _pollTimer = setInterval(async () => {
+        elapsed += 3;
+        document.getElementById('status-text').textContent =
+          `Running browser agent — ${elapsed}s elapsed...`;
+        try {
+          const res = await fetch('/result/' + jobId);
+          const data = await res.json();
+
+          if (data.status === 'done') {
+            clearInterval(_pollTimer);
+            card.classList.add('visible');
+            header.textContent = 'Result';
+            body.textContent = typeof data.result === 'object'
+              ? JSON.stringify(data.result, null, 2)
+              : data.result;
+            btn.disabled = false;
+            status.classList.remove('visible');
+          } else if (data.status === 'error') {
+            clearInterval(_pollTimer);
+            showError(data.result || 'An unexpected error occurred.');
+            btn.disabled = false;
+            status.classList.remove('visible');
+          }
+          // status === 'pending' → keep polling
+        } catch (err) {
+          clearInterval(_pollTimer);
+          showError('Network error while polling: ' + err.message);
+          btn.disabled = false;
+          status.classList.remove('visible');
+        }
+      }, 3000);
+    }
+
+    function showError(msg) {
+      const card = document.getElementById('result-card');
+      const header = document.getElementById('result-header');
+      const body = document.getElementById('result-body');
+      card.classList.add('visible', 'error');
+      header.textContent = 'Error';
+      body.textContent = msg;
     }
 
     document.getElementById('task-input').addEventListener('keydown', e => {
@@ -214,9 +260,24 @@ async def index():
 async def run(request: TaskRequest):
     if not request.task.strip():
         raise HTTPException(status_code=400, detail="Task cannot be empty.")
+    job_id = str(uuid.uuid4())
+    _jobs[job_id] = {"status": "pending", "result": None}
+    asyncio.create_task(_run_job(job_id, request.task))
+    return {"job_id": job_id}
+
+
+@app.get("/result/{job_id}")
+async def get_result(job_id: str):
+    job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return job
+
+
+async def _run_job(job_id: str, task: str):
     try:
         from bluebot import run_agent
-        result = await run_agent(request.task)
-        return {"result": result}
+        result = await run_agent(task)
+        _jobs[job_id] = {"status": "done", "result": result}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _jobs[job_id] = {"status": "error", "result": str(e)}
