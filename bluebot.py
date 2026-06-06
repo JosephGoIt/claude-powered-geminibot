@@ -53,7 +53,8 @@ def get_browser() -> Browser:
     # In Docker we run Xvfb so HEADLESS stays false — browser behaves like a real desktop browser.
     # Stealth mode is always on to mask automation indicators (navigator.webdriver etc.).
     headless = os.getenv("HEADLESS", "false").lower() == "true"
-    chrome_path = os.getenv("CHROME_PATH") if not headless else None
+    _env_chrome = os.getenv("CHROME_PATH")
+    chrome_path = _env_chrome if (_env_chrome and os.path.exists(_env_chrome)) else None
 
     profile = BrowserProfile(
         keep_alive=False,
