@@ -2,9 +2,6 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    xvfb \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -14,10 +11,11 @@ RUN playwright install chromium --with-deps
 
 COPY app.py bluebot.py task.py ./
 
-# Xvfb virtual display — browser runs non-headless, indistinguishable from a real desktop
-ENV DISPLAY=:99
-ENV HEADLESS=false
+# Use headless=new mode (Chrome 112+) — far harder to fingerprint than old headless,
+# and avoids GPU/display issues that cause CDP timeouts on Xvfb in containers.
+ENV HEADLESS=true
+ENV IN_DOCKER=true
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset & sleep 2 && uvicorn app:app --host 0.0.0.0 --port 8000"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

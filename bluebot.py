@@ -50,29 +50,20 @@ def get_llm() -> ChatGoogle:
 
 
 def get_browser() -> Browser:
-    # In Docker we run Xvfb so HEADLESS stays false — browser behaves like a real desktop browser.
-    # Stealth mode is always on to mask automation indicators (navigator.webdriver etc.).
     headless = os.getenv("HEADLESS", "false").lower() == "true"
     _env_chrome = os.getenv("CHROME_PATH")
     chrome_path = _env_chrome if (_env_chrome and os.path.exists(_env_chrome)) else None
 
-    # Docker (Linux) requires --no-sandbox (no user namespace) and --disable-dev-shm-usage
-    # (/dev/shm is only 64 MB in containers, which crashes Chrome without this flag).
-    extra_args = []
-    if sys.platform != "win32":
-        extra_args = [
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-            "--disable-software-rasterizer",
-        ]
+    # chromium_sandbox=False forces CHROME_DOCKER_ARGS (--no-sandbox, --disable-dev-shm-usage, etc.)
+    # regardless of whether IN_DOCKER auto-detection succeeds.
+    in_docker = sys.platform != "win32"
 
     profile = BrowserProfile(
         keep_alive=False,
         stealth=True,
         headless=headless,
         executable_path=chrome_path,
-        extra_chromium_args=extra_args,
+        chromium_sandbox=not in_docker,
     )
     return Browser(browser_profile=profile)
 
