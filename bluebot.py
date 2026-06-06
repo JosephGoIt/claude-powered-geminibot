@@ -16,15 +16,15 @@ def get_llm() -> ChatGoogle:
     return ChatGoogle(model="gemini-2.5-flash")
 
 
-def get_browser(stealth: bool = False) -> Browser:
-    # HEADLESS=true  → headless Playwright Chromium (server/cloud deployment)
-    # HEADLESS=false → local Chrome via CHROME_PATH (default for local dev)
+def get_browser() -> Browser:
+    # In Docker we run Xvfb so HEADLESS stays false — browser behaves like a real desktop browser.
+    # Stealth mode is always on to mask automation indicators (navigator.webdriver etc.).
     headless = os.getenv("HEADLESS", "false").lower() == "true"
     chrome_path = os.getenv("CHROME_PATH") if not headless else None
 
     profile = BrowserProfile(
         keep_alive=False,
-        stealth=stealth,
+        stealth=True,
         headless=headless,
         executable_path=chrome_path,
     )
