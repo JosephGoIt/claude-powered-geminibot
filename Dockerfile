@@ -20,4 +20,4 @@ ENV HEADLESS=false
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset & uvicorn app:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset & sleep 2 && uvicorn app:app --host 0.0.0.0 --port 8000"]

@@ -56,11 +56,23 @@ def get_browser() -> Browser:
     _env_chrome = os.getenv("CHROME_PATH")
     chrome_path = _env_chrome if (_env_chrome and os.path.exists(_env_chrome)) else None
 
+    # Docker (Linux) requires --no-sandbox (no user namespace) and --disable-dev-shm-usage
+    # (/dev/shm is only 64 MB in containers, which crashes Chrome without this flag).
+    extra_args = []
+    if sys.platform != "win32":
+        extra_args = [
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-software-rasterizer",
+        ]
+
     profile = BrowserProfile(
         keep_alive=False,
         stealth=True,
         headless=headless,
         executable_path=chrome_path,
+        extra_chromium_args=extra_args,
     )
     return Browser(browser_profile=profile)
 
