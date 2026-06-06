@@ -4,3 +4,6 @@ playwright>=1.49.0
 browser-use>=0.3.14
 python-dotenv
 langchain-google-genai
+pydantic==2.12.5
+pydantic-core==2.41.5
+jiter==0.15.0
