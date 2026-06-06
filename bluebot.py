@@ -1,4 +1,6 @@
 import os
+import re
+import json
 import asyncio
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -10,6 +12,37 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _executor = ThreadPoolExecutor(max_workers=1)
+
+
+def _extract_json(text: str) -> str:
+    """Extract and return a JSON object from text that may contain prose."""
+    if not text:
+        return text
+    # Already valid JSON?
+    try:
+        json.loads(text.strip())
+        return text.strip()
+    except json.JSONDecodeError:
+        pass
+    # Strip markdown code fences
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if fenced:
+        candidate = fenced.group(1)
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass
+    # Find the first {...} block in the text
+    match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
+    if match:
+        candidate = match.group(0)
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass
+    return text
 
 
 def get_llm() -> ChatGoogle:
@@ -37,7 +70,7 @@ async def _run_agent_inner(task: str) -> str:
     agent_instance = Agent(task=task, llm=llm, browser=browser)
     response = await agent_instance.run()
     if response.final_result():
-        return response.final_result()
+        return _extract_json(response.final_result())
     return str(response)
 
 
